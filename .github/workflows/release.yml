@@ -1,0 +1,86 @@
+# @Time    : 2026/10/19 15:10
+# @Author  : fzf
+# @FileName: release.yml
+# @Software: Claude Code
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for manual publish)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # 不用 ubuntu-latest（24.04）：虽然本项目不编译原生代码、产物是 Electron 22
+    # 官方预编译二进制（兼容 deepin 20.9 的 glibc 2.28），仍固定最老可用 runner，
+    # 避免未来引入原生依赖时产出高 glibc 链接的产物。
+    # 注意：ubuntu-20.04 runner 已被 GitHub 退役，ubuntu-22.04 为当前最老选项。
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build deb package
+        run: npm run dist:deb
+
+      - name: Collect artifacts with checksums
+        run: |
+          mkdir -p dist
+          cp release/*.deb dist/
+          cd dist
+          for f in *.deb; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: |
+            dist/*.deb
+            dist/*.sha256
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          name: deepin-desktop-manager ${{ github.ref_name || github.event.inputs.tag }}
+          body: |
+            ## 安装
+
+            ```bash
+            sudo dpkg -i deepin-desktop-manager_*_amd64.deb
+            # 依赖缺失时
+            sudo apt-get install -f
+            ```
+
+            运行时依赖 `libnotify4`。
+
+            ## 校验
+
+            ```bash
+            sha256sum -c deepin-desktop-manager_*_amd64.deb.sha256
+            ```
+          files: |
+            dist/*.deb
+            dist/*.sha256
