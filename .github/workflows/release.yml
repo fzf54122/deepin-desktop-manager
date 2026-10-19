@@ -40,7 +40,9 @@ jobs:
         run: npm test
 
       - name: Build deb package
-        run: npm run dist:deb
+        # --publish never：tag 触发时禁止 electron-builder 自带的自动发布
+        # （它没有 GH_TOKEN 会直接报错），发布统一由最后的 softprops step 完成
+        run: npm run dist:deb -- --publish never
 
       - name: Collect artifacts with checksums
         run: |
